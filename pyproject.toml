@@ -1,0 +1,45 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "cc-claude"
+version = "0.1.0"
+description = "Manage and launch Claude Code projects from your terminal"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.8"
+authors = [
+    { name = "LeonMinkus" },
+]
+keywords = ["claude", "claude-code", "cli", "project-manager", "developer-tools"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Environment :: Console",
+    "License :: OSI Approved :: MIT License",
+    "Intended Audience :: Developers",
+    "Topic :: Software Development",
+    "Topic :: Utilities",
+]
+dependencies = [
+    "click>=8.0",
+    "rich>=13.0",
+    "questionary>=2.0",
+    "platformdirs>=3.0",
+]
+
+[project.scripts]
+cc = "cc_claude.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/LeonMinkus/cc-claude"
+Repository = "https://github.com/LeonMinkus/cc-claude"
+Issues = "https://github.com/LeonMinkus/cc-claude/issues"
