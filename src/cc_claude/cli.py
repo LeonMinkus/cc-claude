@@ -37,16 +37,16 @@ def _relative_time(iso_str):
         return "unknown"
 
 
-def _open_project(store, project):
+def _open_project(store, project, notify=True):
     """Touch the project timestamp and launch Claude Code."""
     store.touch_project(project["name"])
     console.print(
         f"  Opening [bold cyan]{project['name']}[/] in Claude Code..."
     )
-    launch_claude(project["path"])
+    launch_claude(project["path"], notify=notify)
 
 
-def _interactive_select(store):
+def _interactive_select(store, notify=True):
     """Show interactive project selector."""
     projects = store.list_projects()
     if not projects:
@@ -75,7 +75,7 @@ def _interactive_select(store):
         # User cancelled (Ctrl+C / ESC)
         return
 
-    _open_project(store, selected)
+    _open_project(store, selected, notify=notify)
 
 
 class SmartGroup(click.Group):
@@ -102,32 +102,43 @@ class SmartGroup(click.Group):
 
 
 @click.group(cls=SmartGroup, invoke_without_command=True)
+@click.option(
+    "--no-notify",
+    is_flag=True,
+    default=False,
+    help="Disable desktop notifications when Claude is waiting for input.",
+)
 @click.pass_context
-def main(ctx):
+def main(ctx, no_notify):
     """cc - Claude Code Project Manager
 
     Manage and launch Claude Code projects from your terminal.
     """
+    ctx.ensure_object(dict)
+    ctx.obj["notify"] = not no_notify
     if ctx.invoked_subcommand is None:
         store = ProjectStore()
-        _interactive_select(store)
+        _interactive_select(store, notify=ctx.obj["notify"])
 
 
 @main.command("list")
-def list_cmd():
+@click.pass_context
+def list_cmd(ctx):
     """Interactive project selector (same as bare 'cc')."""
     store = ProjectStore()
-    _interactive_select(store)
+    _interactive_select(store, notify=ctx.obj["notify"])
 
 
 @main.command("open")
 @click.argument("path_or_name")
-def open_cmd(path_or_name):
+@click.pass_context
+def open_cmd(ctx, path_or_name):
     """Open a project in Claude Code.
 
     PATH_OR_NAME can be a directory path (auto-tracks it) or a tracked project name.
     """
     store = ProjectStore()
+    notify = ctx.obj["notify"]
 
     # Check if it's a path (directory exists on disk)
     expanded = os.path.expanduser(path_or_name)
@@ -137,7 +148,7 @@ def open_cmd(path_or_name):
             project = store.add_project(resolved)
         except ValueError as e:
             raise click.ClickException(str(e))
-        _open_project(store, project)
+        _open_project(store, project, notify=notify)
         return
 
     # Otherwise treat as a project name
@@ -150,7 +161,7 @@ def open_cmd(path_or_name):
             f"Tracked projects: {names}"
         )
 
-    _open_project(store, project)
+    _open_project(store, project, notify=notify)
 
 
 @main.command("rm")
