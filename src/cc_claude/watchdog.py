@@ -12,7 +12,6 @@ import time
 
 POLL_INTERVAL = 2        # seconds between checks
 COOLDOWN = 30            # seconds between consecutive notifications
-UNFOCUSED_TIMEOUT = 60   # seconds unfocused before a reminder fires
 CONSOLE_TAIL_LINES = 5   # lines to read from console buffer
 
 # Permission prompt patterns (combined into one regex)
@@ -114,23 +113,20 @@ if sys.platform == "win32":
         except Exception:
             return []
 
-    def _bring_to_foreground(hwnd):
-        try:
-            user32.ShowWindow(hwnd, SW_RESTORE)
-            user32.SetForegroundWindow(hwnd)
-        except Exception:
-            pass
-
 
 class NotificationWatchdog:
     """Background thread that watches for Claude Code permission prompts."""
 
     def __init__(self, project_name=None):
         self._console_hwnd = _get_console_hwnd()
+        # Capture the actual visible window (e.g. Windows Terminal) while the
+        # terminal is still focused.  GetConsoleWindow() only returns the
+        # hidden conhost HWND which is useless for focus checks or restoring.
+        fg = _get_foreground_hwnd()
+        self._window_hwnd = fg if fg else self._console_hwnd
         self._stop_event = threading.Event()
         self._thread = None
         self._last_notify_time = 0.0
-        self._unfocused_since = None
         self._project_name = project_name
 
     def start(self):
@@ -144,7 +140,7 @@ class NotificationWatchdog:
 
     def _is_focused(self):
         try:
-            return _get_foreground_hwnd() == self._console_hwnd
+            return _get_foreground_hwnd() == self._window_hwnd
         except Exception:
             return True  # assume focused on error (don't notify)
 
@@ -154,29 +150,17 @@ class NotificationWatchdog:
             if self._stop_event.is_set():
                 break
 
-            now = time.monotonic()
-
             if self._is_focused():
-                self._unfocused_since = None
                 continue
-
-            # Window is not focused
-            if self._unfocused_since is None:
-                self._unfocused_since = now
 
             # Respect cooldown
-            if (now - self._last_notify_time) < COOLDOWN:
+            if (time.monotonic() - self._last_notify_time) < COOLDOWN:
                 continue
 
-            # Strategy 1: permission pattern detected
+            # Only notify when a permission pattern is detected in the console
             lines = _read_console_tail()
             if lines and _PERMISSION_RE.search("\n".join(lines)):
                 self._notify("Waiting for your input")
-                continue
-
-            # Strategy 2: unfocused for a long time
-            if (now - self._unfocused_since) >= UNFOCUSED_TIMEOUT:
-                self._notify("May need your attention")
 
     def _notify(self, msg):
         self._last_notify_time = time.monotonic()
@@ -191,22 +175,24 @@ class NotificationWatchdog:
             icon_file = Path(__file__).parent / "assets" / "icon.png"
             icon_uri = icon_file.as_uri() if icon_file.exists() else ""
 
-            # Write a temp .vbs script that brings the terminal to foreground
-            # when the user clicks the toast. Uses wscript (no console flash)
-            # and pythonw (no window) to call SetForegroundWindow.
-            hwnd = self._console_hwnd
+            # Write a temp .pyw script that brings the terminal to foreground
+            # when the user clicks the toast.  .pyw runs via pythonw (no
+            # console window).  Uses _window_hwnd which is the actual visible
+            # terminal window (e.g. Windows Terminal), not the hidden conhost.
+            hwnd = self._window_hwnd
             focus_script = None
             if hwnd:
-                fd, focus_script = tempfile.mkstemp(suffix=".vbs", prefix="cc_focus_")
-                vbs = (
-                    'CreateObject("WScript.Shell").Run '
-                    '"pythonw -c ""import ctypes;'
-                    f"ctypes.windll.user32.ShowWindow({hwnd},9);"
-                    f'ctypes.windll.user32.SetForegroundWindow({hwnd})"" ", 0\n'
-                    'CreateObject("Scripting.FileSystemObject")'
-                    ".DeleteFile WScript.ScriptFullName\n"
+                fd, focus_script = tempfile.mkstemp(suffix=".pyw", prefix="cc_focus_")
+                pyw = (
+                    "import ctypes, os\n"
+                    f"ctypes.windll.user32.ShowWindow({hwnd}, 9)\n"
+                    f"ctypes.windll.user32.SetForegroundWindow({hwnd})\n"
+                    "try:\n"
+                    f"    os.unlink(r'{focus_script}')\n"
+                    "except Exception:\n"
+                    "    pass\n"
                 )
-                os.write(fd, vbs.encode("utf-8"))
+                os.write(fd, pyw.encode("utf-8"))
                 os.close(fd)
 
             toast = Notification(
