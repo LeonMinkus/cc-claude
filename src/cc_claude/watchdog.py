@@ -182,20 +182,40 @@ class NotificationWatchdog:
         self._last_notify_time = time.monotonic()
         try:
             import os
+            import tempfile
             from pathlib import Path
 
             from winotify import Notification
 
             title = f"[{self._project_name}]" if self._project_name else "Claude Code"
             icon_file = Path(__file__).parent / "assets" / "icon.png"
-            # winotify uses Windows toast XML which needs a file:/// URI
             icon_uri = icon_file.as_uri() if icon_file.exists() else ""
+
+            # Write a temp .vbs script that brings the terminal to foreground
+            # when the user clicks the toast. Uses wscript (no console flash)
+            # and pythonw (no window) to call SetForegroundWindow.
+            hwnd = self._console_hwnd
+            focus_script = None
+            if hwnd:
+                fd, focus_script = tempfile.mkstemp(suffix=".vbs", prefix="cc_focus_")
+                vbs = (
+                    'CreateObject("WScript.Shell").Run '
+                    '"pythonw -c ""import ctypes;'
+                    f"ctypes.windll.user32.ShowWindow({hwnd},9);"
+                    f'ctypes.windll.user32.SetForegroundWindow({hwnd})"" ", 0\n'
+                    'CreateObject("Scripting.FileSystemObject")'
+                    ".DeleteFile WScript.ScriptFullName\n"
+                )
+                os.write(fd, vbs.encode("utf-8"))
+                os.close(fd)
+
             toast = Notification(
                 app_id="cc-claude",
                 title=title,
                 msg=msg,
                 duration="short",
                 icon=icon_uri,
+                launch=focus_script if focus_script else "",
             )
             toast.show()
         except Exception:
