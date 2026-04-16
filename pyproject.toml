@@ -44,3 +44,7 @@ cc = "cc_claude.cli:main"
 Homepage = "https://github.com/LeonMinkus/cc-claude"
 Repository = "https://github.com/LeonMinkus/cc-claude"
 Issues = "https://github.com/LeonMinkus/cc-claude/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/cc_claude"]
+artifacts = ["src/cc_claude/assets/*.png"]

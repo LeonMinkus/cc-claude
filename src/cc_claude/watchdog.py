@@ -29,7 +29,7 @@ _PERMISSION_RE = re.compile(
 )
 
 
-def create_watchdog():
+def create_watchdog(project_name=None):
     """Factory: returns a NotificationWatchdog on Windows, None otherwise."""
     if sys.platform != "win32":
         return None
@@ -38,7 +38,7 @@ def create_watchdog():
     except ImportError:
         return None
     try:
-        wd = NotificationWatchdog()
+        wd = NotificationWatchdog(project_name=project_name)
         if wd._console_hwnd == 0:
             return None
         return wd
@@ -125,12 +125,13 @@ if sys.platform == "win32":
 class NotificationWatchdog:
     """Background thread that watches for Claude Code permission prompts."""
 
-    def __init__(self):
+    def __init__(self, project_name=None):
         self._console_hwnd = _get_console_hwnd()
         self._stop_event = threading.Event()
         self._thread = None
         self._last_notify_time = 0.0
         self._unfocused_since = None
+        self._project_name = project_name
 
     def start(self):
         self._thread = threading.Thread(target=self._run, daemon=True)
@@ -170,23 +171,31 @@ class NotificationWatchdog:
             # Strategy 1: permission pattern detected
             lines = _read_console_tail()
             if lines and _PERMISSION_RE.search("\n".join(lines)):
-                self._notify("Claude Code needs your input")
+                self._notify("Waiting for your input")
                 continue
 
             # Strategy 2: unfocused for a long time
             if (now - self._unfocused_since) >= UNFOCUSED_TIMEOUT:
-                self._notify("Claude Code may need your attention")
+                self._notify("May need your attention")
 
     def _notify(self, msg):
         self._last_notify_time = time.monotonic()
         try:
+            import os
+            from pathlib import Path
+
             from winotify import Notification
 
+            title = f"[{self._project_name}]" if self._project_name else "Claude Code"
+            icon_file = Path(__file__).parent / "assets" / "icon.png"
+            # winotify uses Windows toast XML which needs a file:/// URI
+            icon_uri = icon_file.as_uri() if icon_file.exists() else ""
             toast = Notification(
                 app_id="cc-claude",
-                title="Claude Code",
+                title=title,
                 msg=msg,
                 duration="short",
+                icon=icon_uri,
             )
             toast.show()
         except Exception:

@@ -20,11 +20,13 @@ def launch_claude(project_path, notify=True):
     if not os.path.isdir(project_path):
         raise click.ClickException(f"Directory does not exist: {project_path}")
 
+    project_name = os.path.basename(os.path.realpath(project_path))
+
     if sys.platform == "win32":
         proc = subprocess.Popen(["claude"], cwd=project_path, shell=True)
         watchdog = None
         if notify:
-            watchdog = create_watchdog()
+            watchdog = create_watchdog(project_name=project_name)
             if watchdog:
                 watchdog.start()
         try:
